@@ -16,6 +16,17 @@
 #include <unistd.h>
 extern char *program_invocation_short_name;
 static inline const char *getprogname(void) { return program_invocation_short_name; }
+/* glibc on the GitHub Actions runner does not provide BSD strlcat. */
+static inline size_t hakios_host_strlcat(char *dst, const char *src, size_t size) {
+	size_t dlen = strnlen(dst, size);
+	size_t slen = strlen(src);
+	if (dlen == size) return size + slen;
+	size_t copy = slen < size - dlen - 1 ? slen : size - dlen - 1;
+	memcpy(dst + dlen, src, copy);
+	dst[dlen + copy] = '\0';
+	return dlen + slen;
+}
+#define strlcat hakios_host_strlcat
 #ifndef __unused
 #define __unused __attribute__((unused))
 #endif
