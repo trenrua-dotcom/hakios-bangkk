@@ -5,6 +5,9 @@
 !/hakios-metal/
 !/.gitignore
 !/.gitattributes
+!/.github/
+!/.github/workflows/
+!/.github/workflows/Build.yml
 !/VERSION
 !/README.md
 !/CONTRIBUTING.md
@@ -121,6 +124,18 @@ __pycache__/
 !/devices/manifest.conf
 !/devices/README.md
 !/devices/qemu/
+!/devices/moto-g84/
+!/devices/moto-g84/README.md
+!/devices/moto-g84/device.conf
+!/devices/moto-g84/soc.args
+!/devices/moto-g84/metal.args
+!/devices/moto-g84/configs/
+!/devices/moto-g84/configs/**
+!/devices/moto-g84/soc/
+!/devices/moto-g84/soc/**
+/devices/moto-g84/prebuilt/
+/devices/moto-g84/uefi/files/Binaries/*/*
+!/devices/moto-g84/uefi/files/Binaries/*/README.md
 
 # Android platform-tools for xl on a Mac (tools/macos-bin/README.md): not part of the repository
 /tools/macos-bin/platform-tools

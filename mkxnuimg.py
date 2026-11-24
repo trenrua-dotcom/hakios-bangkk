@@ -35,6 +35,9 @@ DEVICES = {
         'header_version': 4,
         'dir': 'moto-g84',
         'default_out': 'xnu-bangkk.img',
+        # Same SoC does not make the G85's board firmware safe to use on a G84.
+        # Until a bangkk UEFI build is available, require its own extracted prebuilts.
+        'prebuilt_only': True,
     },
     'poco-x5-pro': {
         'pkg': 'redwood',
@@ -74,7 +77,15 @@ PREBUILT = os.path.join(HERE, 'devices', dev_cfg['dir'], 'prebuilt')
 OUT_FILE = args.output or os.path.join(HERE, dev_cfg['default_out'])
 
 fd_path = os.path.join(MU, f"Build/{dev_cfg['pkg']}Pkg/{args.mode}_CLANGPDB/FV/SILICIUM_UEFI.fd")
-if os.path.isfile(fd_path):
+if dev_cfg.get('prebuilt_only'):
+    parts = {
+        'shim': os.path.join(PREBUILT, 'BootShim.bin'),
+        'fd': os.path.join(PREBUILT, 'SILICIUM_UEFI.fd'),
+        'dtb': os.path.join(PREBUILT, 'device-tree.dtb'),
+        'ramdisk': os.path.join(PREBUILT, 'ramdisk'),
+        'mkbootimg': os.path.join(PREBUILT, 'mkbootimg.py')
+    }
+elif os.path.isfile(fd_path):
     shim_dir = os.path.join(MU, 'BootShim')
     dtb_path = os.path.join(MU, f"Resources/DTBs/{dev_cfg['pkg']}.dtb")
     parts = {

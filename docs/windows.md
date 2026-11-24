@@ -3,6 +3,9 @@
 How to build and run HakiOS with a Windows PC and a phone. It works, with each tool where it fits.
 Everything here was done on a real machine and phone; `tools/doctor.sh` checks the same things for you.
 
+The instructions below describe the established POCO X5 Pro (`redwood`) workflow. For the experimental Moto G84 (`bangkk`) path
+without WSL, see [Moto G84 without WSL](#moto-g84-without-wsl).
+
 ## What runs where
 
 | Job | Where | Why |
@@ -12,6 +15,58 @@ Everything here was done on a real machine and phone; `tools/doctor.sh` checks t
 
 So: build in WSL, copy `userland/root.apfs` and `userland/system.apfs` to the Windows checkout, run `xl`
 from Git Bash.
+
+## Moto G84 without WSL
+
+The XNU and Darwin userland source build in this repository currently targets Linux or macOS; the dependency setup expects
+Linux cctools and Unix filesystem behavior. Windows can still package and boot a prebuilt open-kernel image natively, without
+WSL, with Python and Android platform-tools:
+
+```powershell
+# From the checkout root. First supply the G84-specific UEFI files listed below.
+.\tools\build-bangkk.ps1
+
+# Optional: boot it temporarily while the phone is in fastboot mode.
+.\tools\build-bangkk.ps1 -Boot
+```
+
+This produces `out\hakios-bangkk.img`. `-Boot` uses `fastboot boot`, which runs the image from RAM and does not flash a
+partition. The script uses `prebuilt\hakios-kernel` and `prebuilt\userland\hello`; it does not compile XNU or SpringBoard.
+For a source build without WSL, run **Actions → Build HakiOS for Moto G84 (bangkk) → Run workflow** on GitHub. Its
+`hakios-bangkk` artifact contains the G84 kernel, open loader, hello ramdisk, and XNUP payload. Download and extract it
+into the checkout root, preserving its folder structure. Once the G84-specific UEFI files below are available locally, package the Action payload
+on Windows with:
+
+```powershell
+.\tools\build-bangkk.ps1 -Payload .\out\hakios-bangkk-payload.bin
+```
+
+To use a kernel and ramdisk already in `prebuilt\`, omit `-Payload` and the script creates its own payload.
+
+The G84 image requires all of these files in `devices\moto-g84\prebuilt\`:
+`BootShim.bin`, `SILICIUM_UEFI.fd`, `device-tree.dtb`, `ramdisk`, and `mkbootimg.py`. They must be built or extracted for the
+Moto G84 itself. The supplied stock `vendor_boot.img` yielded a G84 candidate DTB, now kept locally at
+`devices\moto-g84\prebuilt\device-tree.dtb`; it identifies the Blair SoC, but has not been validated as the correct
+boot-image DTB. The G85 (`malmo`) and G84 (`bangkk`) share an SoC family, but this checkout has no verified G84 UEFI image
+or boot parameters. The packer deliberately refuses to substitute a G85 UEFI build. The G84 image's current
+`fd_base`, size, and Android boot header version are provisional values copied from G85 and still need verification on a G84.
+
+To extract the DTB from the G84's stock `vendor_boot.img` in Windows, use:
+
+```powershell
+python tools\extract-vendor-dtb.py C:\path\to\vendor_boot.img --out work\bangkk-dtb
+python tools\soc-args.py work\bangkk-dtb\dtb-00.dtb
+```
+
+If it contains several DTBs, the first command prints each one's model and compatible values; run `tools\soc-args.py`
+on the candidate identified as `bangkk`.
+This reads a local image file and does not write to the phone.
+
+If the G84 bootloader supports the standard read-only `fastboot fetch` command, you can obtain that image from the phone
+without downloading the full firmware package. From Android, run `adb reboot bootloader`, read the active slot with
+`fastboot getvar current-slot`, then fetch the matching `vendor_boot_a` or `vendor_boot_b` to a local file. Return to Android
+with `fastboot reboot`. If `fastboot fetch` reports that the bootloader does not support it, use the matching stock firmware
+package instead.
 
 ## Setup
 

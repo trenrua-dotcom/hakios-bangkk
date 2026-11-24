@@ -1,0 +1,4 @@
+# HakiOS defconfig for the Moto G84 5G (bangkk) (moto-g84): the common kernel, the sm6375 family's facts, and this device's own.
+#include common_defconfig
+#include sm6375.config
+#include moto-g84.config

@@ -1,72 +1,38 @@
-name: Build HakiOS boot image (Moto G84 5G / bangkk)
-
-# Guardar como .github/workflows/build-bangkk-img.yml (reemplaza al Build.yml actual).
-#
-# Cadena real del repo (docs/install.md, docs/getting-started/building.md):
-#   make kernel  ->  make loader-open  ->  mkpayload.py (XNUP)  ->  mkxnuimg.py  ->  boot .img  (fastboot boot)
-#
-# El .img se arranca en RAM con `fastboot boot` (no se flashea nada). Necesita las piezas UEFI del
-# telefono (SILICIUM_UEFI.fd, BootShim.bin, device-tree.dtb, ramdisk, mkbootimg.py) en
-# devices/<dispositivo>/prebuilt/. Esas piezas llevan drivers del fabricante y NO estan en el repo:
-# se traen de un repo privado con el secret HAKIOS_SYNC_TOKEN (mismo mecanismo que ci/github-check.yml).
+name: Build HakiOS for Moto G84 (bangkk)
 
 on:
   workflow_dispatch:
-    inputs:
-      device:
-        description: "Dispositivo de mkxnuimg.py (SM6375; el G84 'bangkk' comparte SoC con el G85 'malmo')"
-        default: moto-g84
-        type: choice
-        options: [moto-g84, moto-g85]
-      use_prebuilt_kernel:
-        description: "Usar prebuilt/hakios-kernel en vez de compilar XNU (rapido, ~2 min)"
-        default: false
-        type: boolean
-  push:
-    tags: ["v*"]
 
-env:
-  DEVICE: ${{ inputs.device || 'moto-g84' }}
-  THEOS: /home/runner/theos
-  OUT_IMG: hakios-bangkk.img
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Build G84 kernel and payload
     runs-on: ubuntu-22.04
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v4
 
-      - name: Liberar disco
+      - name: Free runner disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           df -h /
 
-      - name: Dependencias del host
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential clang lld llvm flex bison m4 perl python3 autoconf automake libtool \
-            git curl xz-utils zstd cpio device-tree-compiler libssl-dev libxml2-dev \
-            qemu-system-arm
+            git curl xz-utils zstd cpio device-tree-compiler libssl-dev libxml2-dev qemu-system-arm
 
-      - name: Cache de XNU y dependencias
-        if: ${{ !inputs.use_prebuilt_kernel }}
-        uses: actions/cache@v4
-        with:
-          path: |
-            xnu-src
-            xnu-deps
-            ${{ env.THEOS }}
-          key: xnu-${{ runner.os }}-${{ hashFiles('xnu/hakios.patch', 'xnu/apply.sh', 'xnu-deps/setup.sh', 'drivers/**', 'configs/**') }}
-          restore-keys: xnu-${{ runner.os }}-
-
-      - name: Theos + cctools (ld64) + iPhoneOS16.5.sdk
-        if: ${{ !inputs.use_prebuilt_kernel }}
+      - name: Set up Theos and the iPhoneOS toolchain
         env:
           GH_TOKEN: ${{ github.token }}
+          THEOS: /home/runner/theos
         run: |
-          set -e
+          set -euo pipefail
           if [ ! -d "$THEOS/.git" ]; then
             git clone --depth 1 --recursive https://github.com/theos/theos.git "$THEOS"
           fi
@@ -76,72 +42,52 @@ jobs:
             tar -xf /tmp/iOSToolchain.tar.xz -C "$THEOS/toolchain"
             rm -f /tmp/iOSToolchain.tar.xz
           fi
-          # el SDK 16.5 lo baja xnu-deps/setup.sh (theos/sdks-git) si falta; aqui se verifica el linker
           if [ ! -x "$THEOS/toolchain/linux/iphone/bin/ld64" ] && [ ! -x "$THEOS/toolchain/linux/iphone/bin/ld" ]; then
-            echo "::error::no hay ld64 en $THEOS/toolchain/linux/iphone/bin (cambio la estructura del toolchain de Theos)"
-            ls -R "$THEOS/toolchain" | head -40
+            echo "No ld64 found in $THEOS/toolchain/linux/iphone/bin"
+            find "$THEOS/toolchain" -maxdepth 5 -type f | head -40
             exit 1
           fi
 
-      - name: Kernel (XNU 8796.121.2 + parche HakiOS)
-        run: |
-          set -e
-          if [ "${{ inputs.use_prebuilt_kernel }}" = "true" ]; then
-            cp prebuilt/hakios-kernel hakios-kernel
-          else
-            make defconfig                  # configuracion abierta, sin nada de Apple
-            make kernel JOBS=$(nproc)
-          fi
-          ls -lh hakios-kernel
+      - name: Configure the Moto G84
+        run: make moto-g84_defconfig
 
-      - name: Loader (identidad placeholder) y hello
-        run: |
-          set -e
-          if [ "${{ inputs.use_prebuilt_kernel }}" = "true" ]; then
-            cp prebuilt/loader.efi xnuloader/loader.efi
-            mkdir -p userland && cp prebuilt/userland/hello userland/hello
-          else
-            make loader-open hello
-          fi
-          ls -lh xnuloader/loader.efi userland/hello
+      - name: Build kernel
+        run: make kernel JOBS="$(nproc)"
 
-      - name: Payload XNUP
-        run: |
-          set -e
-          ARGS=$(tools/hakios-config.py args --defconfig defconfig)
-          xnuloader/mkpayload.py -o payload.bin \
-            kernel=hakios-kernel ramdisk=userland/hello --cmdline "$ARGS"
-          ls -lh payload.bin
+      - name: Build open loader and hello ramdisk
+        run: make loader-open hello
 
-      - name: Piezas UEFI del telefono (repo privado)
-        env:
-          TOKEN: ${{ secrets.HAKIOS_SYNC_TOKEN }}
+      - name: Create G84 payload
         run: |
-          if [ -n "$TOKEN" ]; then
-            git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
-            python3 tools/hakios-device.py sync || true
-          else
-            echo "::warning::sin secret HAKIOS_SYNC_TOKEN: solo se usan las piezas ya presentes en devices/*/prebuilt/"
-          fi
-
-      - name: Armar el boot .img
-        run: |
-          set -e
+          set -euo pipefail
           mkdir -p out
-          python3 mkxnuimg.py --device "$DEVICE" -p payload.bin -o "out/$OUT_IMG"
-          ls -lh "out/$OUT_IMG"
-          sha256sum "out/$OUT_IMG" | tee "out/$OUT_IMG.sha256"
+          CONFIG_ARGS="$(python3 tools/hakios-config.py args --defconfig moto-g84_defconfig)"
+          SOC_ARGS="$(tr '\n' ' ' < devices/moto-g84/soc.args)"
+          xnuloader/mkpayload.py -o out/hakios-bangkk-payload.bin \
+            kernel=hakios-kernel ramdisk=userland/hello \
+            --cmdline "$CONFIG_ARGS $SOC_ARGS"
+          sha256sum out/hakios-bangkk-payload.bin > out/hakios-bangkk-payload.bin.sha256
 
-      - name: Subir artefactos
-        if: always()
+      - name: Explain the remaining device-specific inputs
+        run: |
+          {
+            echo '## Moto G84 build artifacts'
+            echo
+            echo 'The G84 kernel, open loader, hello ramdisk, and XNUP payload were built and are attached to this run.'
+            echo
+            echo 'A complete Android boot image is not produced yet: it needs the G84-specific BootShim, Silicium UEFI, ramdisk, and mkbootimg.py. The workflow does not substitute Moto G85 firmware.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: hakios-bangkk
           path: |
-            out/${{ env.OUT_IMG }}
-            out/${{ env.OUT_IMG }}.sha256
-            payload.bin
+            out/hakios-bangkk-payload.bin
+            out/hakios-bangkk-payload.bin.sha256
             hakios-kernel
             xnuloader/loader.efi
-          if-no-files-found: warn
+            userland/hello
+            .config
+          if-no-files-found: error
           retention-days: 14
