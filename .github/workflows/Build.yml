@@ -51,6 +51,20 @@ jobs:
             exit 1
           fi
 
+          # xnu-deps/setup.sh expects this SDK under $THEOS/sdks on Linux.
+          if [ ! -d "$THEOS/sdks/iPhoneOS16.5.sdk/usr/include" ]; then
+            mkdir -p "$THEOS/sdks"
+            if [ ! -d "$THEOS/sdks-git/iPhoneOS16.5.sdk/usr/include" ]; then
+              rm -rf "$THEOS/sdks-git"
+              git clone --depth 1 --filter=blob:none --sparse \
+                https://github.com/theos/sdks.git "$THEOS/sdks-git"
+              git -C "$THEOS/sdks-git" sparse-checkout set iPhoneOS16.5.sdk
+            fi
+            rm -rf "$THEOS/sdks/iPhoneOS16.5.sdk"
+            ln -s ../sdks-git/iPhoneOS16.5.sdk "$THEOS/sdks/iPhoneOS16.5.sdk"
+          fi
+          test -d "$THEOS/sdks/iPhoneOS16.5.sdk/usr/include"
+
       - name: Configure the Moto G84
         run: make moto-g84_defconfig
 
