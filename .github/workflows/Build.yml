@@ -71,6 +71,17 @@ jobs:
       - name: Build kernel
         run: make kernel JOBS="$(nproc)"
 
+      - name: Show dependency build logs on failure
+        if: failure()
+        run: |
+          for log in xnu-deps/exporthdrs.log xnu-deps/mig-build.log xnu-deps/tcsh-build.log; do
+            if [ -f "$log" ]; then
+              echo "::group::$log (last 200 lines)"
+              tail -n 200 "$log"
+              echo "::endgroup::"
+            fi
+          done
+
       - name: Build open loader and hello ramdisk
         run: make loader-open hello
 
