@@ -29,7 +29,6 @@ jobs:
 
       - name: Set up Theos and the iPhoneOS toolchain
         env:
-          GH_TOKEN: ${{ github.token }}
           THEOS: /home/runner/theos
         run: |
           set -euo pipefail
@@ -38,7 +37,11 @@ jobs:
           fi
           if [ ! -d "$THEOS/toolchain/linux/iphone/bin" ]; then
             mkdir -p "$THEOS/toolchain"
-            gh release download --repo L1ghtmann/llvm-project --pattern 'iOSToolchain.tar.xz' --dir /tmp --clobber
+            ARCH="$(uname -m)"
+            curl --fail --location --retry 3 \
+              "https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-${ARCH}.tar.xz" \
+              --output /tmp/iOSToolchain.tar.xz
+            tar -tJf /tmp/iOSToolchain.tar.xz > /dev/null
             tar -xf /tmp/iOSToolchain.tar.xz -C "$THEOS/toolchain"
             rm -f /tmp/iOSToolchain.tar.xz
           fi
