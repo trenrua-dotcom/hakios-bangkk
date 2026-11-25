@@ -308,6 +308,12 @@ static char out_buf[2 * 1024 * 1024] __attribute__((aligned(0x2000)));
 /* the storage's reads for the kernel land here (block_poll), and nothing else may be put in it */
 #define BLOCK_BUFFER_SIZE  (4u << 20)
 static uint8_t block_buffer[BLOCK_BUFFER_SIZE] __attribute__((aligned(0x2000)));
+/* Keep COFF's page-relative relocation on the symbol itself, not a 1 MiB interior offset. */
+__attribute__((noinline)) static uint8_t *
+block_buffer_at(size_t offset)
+{
+	return block_buffer + offset;
+}
 /*
  * Where the log is read back to compare it (write_logs). Not block_buffer: that is the kernel's
  * mailbox buffer, and a read-back landing in it while the kernel runs on the other core would
@@ -2126,7 +2132,7 @@ block_io2_probe(efi_handle h, efi_block_io *bio)
 	for (int i = 0; i < 8; i++) {
 		/* other places than the synchronous reads, so that nothing the storage kept is read again */
 		s = bio2->read_blocks_ex(bio2, bio2->media->media_id, (uint64_t)i * (64ULL << 20) / bs + 1031,
-		    &tokens[i], bs, block_buffer + 1048576 + i * 65536);
+		    &tokens[i], bs, block_buffer_at(1048576 + i * 65536));
 		if (EFI_ERROR(s)) {
 			print("ufs: probe: ReadBlocksEx %d failed %x\n", (uint64_t)i, s);
 			return;
